@@ -1,0 +1,387 @@
+---
+title: "05_Projet_Aerien"
+author: "Asta Ouattara"
+date: "2025-05-24"
+output: pdf_document
+---
+
+
+# Chargement des données du projet 4
+```{r}
+load("/Users/astaoliviaouattara/Desktop/GITHUB_OXACARBON/Output_Projet_Aerien/04_Projet_Aerien.RData")
+
+```
+
+
+# Machine learnong et prédiction 
+
+## 🌳 1. Arbre de décision (CART)
+L’arbre de décision est comme un arbre logique qui prend des décisions pas à pas.
+
+À chaque embranchement, il pose une question simple :
+
+Est-ce que l’heure prévue de départ est après 18h ?
+Est-ce que le vol dépasse 1000 km ?
+Est-ce que c’est la compagnie X ?
+En suivant ce parcours, il arrive à une conclusion : retard probable ou pas.
+
+✔️ Avantage : très facile à lire et à expliquer (c’est comme une règle conditionnelle).
+
+❌ Limite : un arbre seul peut être instable (sensibles aux données).
+
+📊 Utilité pour les décideurs :
+
+Fournit des règles simples de détection de vols à risque.
+Permet d'identifier des profils de vols plus souvent en retard.
+
+
+**Intepretation du principe de l'arbre de decision**
+L’arbre de décision fonctionne comme un ensemble de règles conditionnelles que l’on suit pas à pas. Par exemple, le modèle peut dire :
+
+Si le vol est prévu après 18h, et qu’il part de l’aéroport JFK, et que la distance est supérieure à 800 km,
+→ Alors il y a 68 % de chances qu’il soit en retard.
+
+Ce modèle est intuitif et facile à lire, ce qui permet aux équipes opérationnelles d’identifier rapidement les profils de vols à risque. Il peut par exemple suggérer de reprogrammer les vols longs de fin de journée vers des créneaux moins sensibles.
+
+
+
+
+
+
+🌲 2. Random Forest (forêt aléatoire)
+Une forêt aléatoire, c’est comme plusieurs arbres de décision qui votent ensemble.
+
+Chaque arbre analyse les données un peu différemment, puis on prend la majorité.
+
+Cela permet d’avoir une meilleure robustesse : le modèle est plus stable et fiable que juste un seul arbre.
+
+Il donne aussi des indicateurs d’importance des variables :
+
+Est-ce que c’est surtout la distance ?
+
+Est-ce que l’aéroport de départ compte plus que la compagnie ?
+
+✔️ Avantage : très bon compromis entre précision, robustesse, et interprétabilité.
+
+📊 Utilité pour les décideurs :
+
+Permet de cibler les facteurs clés de retard.
+
+Sert à prioriser les variables à surveiller : si l’heure ou la compagnie est très importante, on agit dessus.
+
+🔥 3. Boosting (xgboost)
+Le boosting, c’est comme un entraîneur qui corrige ses erreurs à chaque round.
+
+Le premier modèle essaie de prédire les retards, mais il se trompe un peu.
+
+Le second modèle se concentre sur les erreurs du premier.
+
+Le troisième corrige les erreurs du deuxième.
+
+Et ainsi de suite... jusqu’à obtenir un modèle très puissant, capable de repérer des interactions complexes entre variables.
+
+✔️ Avantage : excellent en précision de prédiction.
+
+❌ Limite : plus dur à expliquer en détail (modèle en "boîte noire").
+
+📊 Utilité pour les décideurs :
+
+Permet de prédire avec très haute précision si un vol va être en retard.
+
+Sert à déployer un système d’alerte automatique, basé sur les prévisions.
+
+
+## Préparation des données communes 
+
+🪜 Étapes détaillées :
+Préparation des données
+
+On nettoie le jeu de données pour enlever les lignes manquantes (par exemple, quand dep_delay est NA).
+
+On transforme certaines variables (ex : heure de départ prévue → heure entière).
+
+On encode les variables catégorielles (carrier, origin, dest, month) comme des facteurs car le modèle en a besoin.
+
+Séparation des données
+
+
+
+
+```{r}
+# Chargement des packages
+library(nycflights13)
+library(dplyr)
+library(caret)
+library(rpart)
+library(randomForest)
+library(xgboost)
+
+# Nettoyage et sélection des variables
+flights_clean <- flights %>%
+  filter(!is.na(dep_delay), !is.na(air_time), !is.na(distance), !is.na(sched_dep_time)) %>%
+  mutate(
+    retard_15min = ifelse(dep_delay > 15, 1, 0),
+    sched_dep_hour = floor(sched_dep_time / 100),
+    carrier = as.factor(carrier),
+    origin = as.factor(origin),
+    dest = as.factor(dest),
+    month = as.factor(month)
+  ) %>%
+  select(retard_15min, carrier, origin, dest, distance, air_time, sched_dep_hour, month)
+
+```
+
+Séparation des données de test et des données d'apprentissage
+
+On divise en données d’apprentissage (70%) et données de test (30%) avec createDataPartition().
+```{r}
+# Séparation en train / test
+set.seed(123)
+train_index <- createDataPartition(flights_clean$retard_15min, p = 0.7, list = FALSE)
+train <- flights_clean[train_index, ]
+test <- flights_clean[-train_index, ]
+```
+
+
+
+## Arbre de décision CART
+
+Objectif : produire un arbre logique pour prédire si un vol sera en retard (>15 minutes)
+
+1) Construction de l’arbre
+On utilise rpart() pour créer l’arbre de décision 
+
+```{r}
+# Modèle CART
+model_cart <- rpart(retard_15min ~ ., data = train, method = "class", cp = 0.001, minsplit = 10)
+
+
+```
+
+Visualisation de l'arbre de décision 
+
+```{r}
+library(rpart.plot)
+rpart.plot(model_cart)
+
+```
+
+
+
+```{r}
+table(train$retard_15min)
+
+```
+
+
+2) Prédiction sur les données test
+Le modèle va “suivre les branches” et dire pour chaque vol s’il est retardé ou non 
+
+```{r}
+# Prédictions
+pred_cart <- predict(model_cart, test, type = "class")
+
+```
+
+3) Évaluation
+On compare les prédictions à la réalité avec confusionMatrix() :
+
+```{r}
+# Évaluation
+confusionMatrix(pred_cart, as.factor(test$retard_15min))
+
+```
+
+
+
+
+## Random Forest 
+
+🎯 Objectif : combiner plusieurs arbres pour une prédiction plus robuste et précise
+🪜 Étapes détaillées :
+Même préparation des données que pour l’arbre de décision.
+
+Modélisation
+
+
+
+1) On crée 100 arbres avec randomForest() :
+
+
+```{r}
+train_rf <- train %>% select(-dest)
+test_rf <- test %>% select(-dest)
+
+
+```
+
+construction du modèle
+
+```{r}
+model_rf <- randomForest(as.factor(retard_15min) ~ ., data = train_rf, ntree = 100, importance = TRUE)
+
+```
+
+
+
+Importance des variables dans la forêt
+
+```{r}
+varImpPlot(model_rf)
+
+```
+
+2)  Prédiction Le modèle fait voter les arbres sur les données de test :
+
+```{r}
+# Prédictions
+pred_rf <- predict(model_rf, test_rf)
+
+```
+
+3) Évaluation : On calcule la matrice de confusion :
+
+```{r}
+# Évaluation
+confusionMatrix(pred_rf, as.factor(test_rf$retard_15min))
+
+```
+
+4) Importance des variables :
+On visualise quelles variables expliquent le plus les retards :
+```{r}
+# Importance des variables
+varImpPlot(model_rf)
+
+```
+
+
+## Boosting : XGboost 
+
+🎯 Objectif : construire une suite de petits modèles qui corrigent les erreurs des précédents
+🪜 Étapes détaillées :
+1)Encodage numérique
+xgboost ne supporte pas directement les facteurs. On convertit les données avec model.matrix() :
+
+
+```{r}
+# Préparation des données pour xgboost
+train_x <- model.matrix(retard_15min ~ . -1, data = train)
+train_y <- train$retard_15min
+
+test_x <- model.matrix(retard_15min ~ . -1, data = test)
+test_y <- test$retard_15min
+
+```
+
+
+2) Modélisation : On construit un modèle boosté avec 100 itérations :
+
+```{r}
+# Modèle xgboost
+model_xgb <- xgboost(data = train_x, label = train_y, 
+                     nrounds = 100, objective = "binary:logistic", verbose = 0)
+```
+
+
+3) Prédiction : Le modèle donne une probabilité (entre 0 et 1) :
+
+```{r}
+# Prédictions
+pred_xgb_prob <- predict(model_xgb, test_x)
+pred_xgb <- ifelse(pred_xgb_prob > 0.5, 1, 0)
+
+```
+
+
+4) Évaluation : Même principe que pour les autres modèles :
+
+```{r}
+# Évaluation
+confusionMatrix(as.factor(pred_xgb), as.factor(test_y))
+
+```
+
+
+
+## Choix du modèle finale
+
+```{r}
+install.packages("pROC")  # si ce n'est pas déjà fait
+library(pROC)
+library(ggplot2)
+
+```
+
+Assure-toi d’avoir des prédictions probabilistes pour chaque modèle
+🔹 Arbre de décision (CART)
+
+```{r}
+# Prédictions probabilistes
+proba_cart <- predict(model_cart, test, type = "prob")[,2]  # probabilité d’avoir retard = 1
+
+```
+
+
+Random Forest 
+```{r}
+# Si tu as corrigé la variable 'dest' (cf. message précédent)
+proba_rf <- predict(model_rf, test_rf, type = "prob")[,2]
+
+```
+
+
+Boosting : XGboost
+
+```{r}
+# Déjà obtenu dans le modèle précédent
+proba_xgb <- predict(model_xgb, test_x)
+
+```
+
+
+
+Courbe ROC
+
+```{r}
+# Courbes ROC
+roc_cart <- roc(test$retard_15min, proba_cart)
+roc_rf <- roc(test_rf$retard_15min, proba_rf)
+roc_xgb <- roc(test_y, proba_xgb)
+
+# Affichage des AUC
+auc(roc_cart)
+auc(roc_rf)
+auc(roc_xgb)
+
+```
+
+
+Représentation graphique 
+
+```{r}
+# Data pour ggplot
+roc_df <- data.frame(
+  fpr = c(1 - roc_cart$specificities,
+          1 - roc_rf$specificities,
+          1 - roc_xgb$specificities),
+  tpr = c(roc_cart$sensitivities,
+          roc_rf$sensitivities,
+          roc_xgb$sensitivities),
+  modèle = factor(rep(c("CART", "Random Forest", "XGBoost"),
+                      times = c(length(roc_cart$sensitivities),
+                                length(roc_rf$sensitivities),
+                                length(roc_xgb$sensitivities))))
+)
+
+# Tracer
+ggplot(roc_df, aes(x = fpr, y = tpr, color = modèle)) +
+  geom_line(size = 1) +
+  geom_abline(linetype = "dashed", color = "gray") +
+  labs(title = "Courbes ROC comparées",
+       x = "Taux de faux positifs (1 - spécificité)",
+       y = "Taux de vrais positifs (sensibilité)") +
+  theme_minimal()
+
+```
+

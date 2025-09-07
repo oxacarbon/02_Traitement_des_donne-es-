@@ -1,0 +1,497 @@
+---
+title: "02_Projet_Aérien"
+author: "Asta Ouattara"
+date: "2025-05-21"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Etape 3 du projet : automatisation des tâches
+
+## Travil à faire
+
+Création de fonction et de boucle
+ 1. Calculateur de retard total par avion
+But : Écrire une fonction retard_total(tailnum) qui retourne le retard cumulé pour un avion spécifique.
+
+Compétences : group_by, summarise, filter, gestion des NA.
+
+👉 Bonus : Ajouter une option pour filtrer selon le mois.
+
+📅 2. Fonction de planning de vol journalier
+But : Créer une fonction planning_journalier(date) qui affiche tous les vols ce jour-là, triés par heure de départ.
+
+Entrée : une date (ex. "2013-05-17")
+
+Sortie : un data.frame avec les vols.
+
+📉 3. Analyse comparative entre deux compagnies
+But : Fonction compare_carriers(c1, c2) pour comparer la performance (retards moyens, distance, temps de vol, etc.)
+
+Bonus : Retourner aussi des graphiques comparatifs (avec ggplot2).
+
+🌍 4. Cartographie des trajets ( pas très utile de cartographier les villes)
+But : Créer une fonction trace_routes(carrier) qui trace les principales routes utilisées par une compagnie sur une carte (ggplot2 + maps ou leaflet).
+
+Données utiles : airports (dans nycflights13)
+
+⏱ 5. Fonction de performance horaire
+But : Fonction perf_par_heure(carrier) pour voir à quelle heure une compagnie a le plus de retards ou d’annulations.
+
+Sortie : un graphique ou un tableau des retards moyens par heure.
+
+📊 6. Score de fiabilité des vols
+But : Créer une fonction score_fiabilite(carrier) qui donne un score basé sur :
+
+% de vols annulés
+
+% de vols en retard de plus de 15 min
+
+temps de vol vs distance
+
+Apprentissage : logique conditionnelle, pondération de critères, visualisation.
+
+📦 7. Fonction multi-filtre personnalisée
+But : Une fonction filtrer_vols(date = NULL, carrier = NULL, dest = NULL, min_delay = NULL) qui permet de filtrer dynamiquement selon les inputs de l'utilisateur.
+
+Compétences : arguments optionnels, logique if (!is.null(...)), piping dynamique.
+
+🚨 8. Détection des jours critiques
+But : Créer une fonction jours_critiques(n = 5) qui retourne les jours avec le plus de retards ou d’annulations.
+
+Bonus : Affichage visuel des jours critiques sur un calendrier (avec ggplot2 ou timevis).
+
+
+## Etape 1 : télécharger les données depuis le markdown 02_Projet_Aérien.rmd
+
+
+```{r}
+# Etape 1 : 1. Calculateur de retard total par avion
+#But : Écrire une fonction retard_total(tailnum) qui retourne le retard cumulé pour un avion spécifique.
+
+
+# Définition de la fonction
+retard_total <- function(tailnum, mois = NULL) {
+  # Étape 1 : filtrer les vols de cet avion
+  vols <- flights %>%
+    filter(tailnum == !!tailnum, !is.na(arr_delay))
+
+  # Étape 2 : si mois est spécifié, on filtre aussi sur le mois
+  if (!is.null(mois)) {
+    vols <- vols %>% filter(month == mois)
+  }
+
+  # Étape 3 : calcul du retard cumulé
+  total <- sum(vols$arr_delay)
+
+  # Étape 4 : renvoyer le résultat
+  return(total)
+}
+
+
+```
+
+
+
+
+## Afficher tout les vols par vol et par heure 
+Calcul du retard cumulé
+
+```{r}
+planning_journalier <- function(date_str) {
+  # Convertir la date en composantes
+  date_parts <- strsplit(date_str, "-")[[1]]
+  year <- as.numeric(date_parts[1])
+  month <- as.numeric(date_parts[2])
+  day <- as.numeric(date_parts[3])
+
+  # Filtrer et trier les vols de ce jour
+  vols_du_jour <- flights %>%
+    filter(year == year, month == month, day == day) %>%
+    arrange(hour, minute)
+
+  return(vols_du_jour)
+}
+
+# 🧪 Exemple
+planning_journalier("2013-06-15")
+
+```
+
+## Analyse comparative pour les deux compagnies 
+
+## Comparaison de deux compagnies en fonction de leur nombre de retard
+
+```{r}
+compare_carriers <- function(c1, c2) {
+  resume <- flights %>%
+    filter(carrier %in% c(c1, c2)) %>%
+    group_by(carrier) %>%
+    summarise(
+      retard_moyen = mean(arr_delay, na.rm = TRUE),
+      distance_moyenne = mean(distance, na.rm = TRUE),
+      duree_moyenne = mean(air_time, na.rm = TRUE)
+    )
+  return(resume)
+}
+
+# 🧪 Exemple
+compare_carriers("AA", "DL")
+
+```
+
+
+## Construction d'une fonction sur les vols 
+
+```{r}
+compare_carriers <- function(c1, c2) {
+  resume <- flights %>%
+    filter(carrier %in% c(c1, c2)) %>%
+    group_by(carrier) %>%
+    summarise(
+      retard_moyen = mean(arr_delay, na.rm = TRUE),
+      distance_moyenne = mean(distance, na.rm = TRUE),
+      duree_moyenne = mean(air_time, na.rm = TRUE)
+    )
+  return(resume)
+}
+
+# 🧪 Exemple
+compare_carriers("AA", "DL")
+
+```
+
+
+
+## Mise en place d'indicateur de notation des compagnies aériennes 
+
+Objectifs : créer des scores de fiabilités basées sur les vols annulés, les vols en retard et les indicateurs efficicatié distance et temps de vols
+
+
+6. Fonction score_fiabilite(carrier)
+🎯 Objectif :
+Attribuer un score à une compagnie selon :
+
+% de vols annulés (pas de dep_time)
+
+% de vols en retard de +15 min
+
+Efficacité distance vs. temps de vol
+
+
+```{r}
+score_fiabilite <- function(carrier_code) {
+  # Sélection des vols de la compagnie
+  df <- flights %>% filter(carrier == carrier_code)
+
+  total_vols <- nrow(df)
+  vols_annules <- sum(is.na(df$dep_time))
+  vols_retard_15min <- sum(df$dep_delay > 15, na.rm = TRUE)
+  efficacite <- mean(df$distance / df$air_time, na.rm = TRUE)  # miles / minute
+
+  # Scores partiels (pondérés sur 100)
+  score_annul <- 100 * (1 - vols_annules / total_vols)
+  score_retard <- 100 * (1 - vols_retard_15min / total_vols)
+  score_effic <- 100 * (efficacite / max(df$distance / df$air_time, na.rm = TRUE))
+
+  # Score global pondéré
+  score_final <- round(0.4 * score_annul + 0.4 * score_retard + 0.2 * score_effic, 2)
+
+  return(data.frame(
+    compagnie = carrier_code,
+    score_fiabilite = score_final
+  ))
+}
+
+# 🧪 Exemple
+score_fiabilite("AA")
+
+## Interpretation des resulats du score d efiabilité 
+
+# Score élevé (~85-100) → compagnie fiable
+# 🔍 Score moyen (~60-85) → acceptable, mais améliorable
+# 🚩 Score faible (<60) → compagnie peu fiable (annulations fréquentes, retards, etc.)
+
+
+
+```
+
+
+## Interpretatilbilté du score de fiabilité
+
+🎯 Objectif : créer un score de fiabilité pour une compagnie
+On veut savoir : à quel point une compagnie aérienne est fiable ?
+On va créer un score sur 100 à partir de 3 critères :
+
+Critère	Pourquoi c’est important ?
+1. % de vols annulés	Trop d'annulations = mauvaise fiabilité
+2. % de vols en retard (> 15 min)	Beaucoup de retards = mauvaise ponctualité
+3. Efficacité distance / durée	Distance longue pour peu de temps = bon ratio = avion rapide
+
+🧮 Comment on calcule chaque sous-score ?
+🟩 1. Score d’annulation
+
+score_annul <- 100 * (1 - nb_annulés / nb_total_vols)
+
+==> Interprétation :
+
+Si 0% de vols annulés → score = 100 (parfait)
+
+Si 100% de vols annulés → score = 0 (catastrophique)
+
+
+🟨 2. Score de retard
+
+score_retard <- 100 * (1 - nb_retards_15min / nb_total_vols)
+
+==> Interprétation :
+Si 0% de vols en retard de plus de 15 min → score = 100
+
+Si tous les vols sont en retard → score = 0
+
+🟦 3. Score d’efficacité (distance parcourue par minute de vol)
+
+efficacite <- mean(distance / air_time)
+score_effic <- 100 * (efficacite / max(efficacite))
+
+==> Interprétation :
+On compare la moyenne à la meilleure compagnie.
+
+Plus c’est élevé, mieux c’est (l’avion « va plus vite » sur de longues distances)
+
+
+⚖️ Score pondéré final
+
+Tous les critères n’ont pas le même poids :
+
+Critère	Poids
+Annulations	40 %
+Retards	40 %
+Efficacité	20 %
+
+
+score_final <- 0.4 * score_annul + 0.4 * score_retard + 0.2 * score_effic
+
+
+🔁 Exemple fictif
+Imaginons une compagnie avec :
+
+5 % de vols annulés → score_annul = 100 * (1 - 0.05) = 95
+
+20 % de vols en retard > 15 min → score_retard = 100 * (1 - 0.20) = 80
+
+Moyenne distance/air_time = 7, max = 10 → score_effic = 100 * (7 / 10) = 70
+
+Alors :
+
+score_final = 0.4*95 + 0.4*80 + 0.2*70 = 38 + 32 + 14 = 84
+La compagnie aurait un score de fiabilité de 84/100 🟢
+
+🔎 Pourquoi pondérer ?
+Parce qu’on veut dire :
+
+"Mieux vaut un vol en retard qu’un vol annulé"
+
+"L’efficacité est moins critique que la ponctualité"
+
+
+
+
+## Pourquoi la pondération est-elle importante?  (dans notre cas système de nottaion composite)
+
+🎯 Pourquoi pondérer ?
+Pondérer permet de donner plus d’importance à certains critères dans le résultat final.
+Tous les critères n’ont pas le même impact ni la même gravité.
+
+Exemple :
+Un vol annulé est plus problématique qu’un vol en retard de 15 minutes.
+
+Donc on accorde plus de poids aux annulations qu’aux petits retards.
+
+🧮 D'où viennent les poids ? (0.4, 0.4, 0.2)
+Dans notre cas, les poids sont :
+Critère	Poids choisi	Justification
+Annulations	0.4 (40%)	C’est le pire cas (vol supprimé)
+Retards > 15 min	0.4 (40%)	Gêne importante, mais pas critique
+Efficacité	0.2 (20%)	Intéressant mais secondaire ici
+
+👉 Ces poids sont choisis manuellement, selon la logique métier (expérience utilisateur, gravité des cas).
+
+🧠 Méthodes possibles pour fixer les poids
+1. 🎯 Méthode experte (comme ici)
+Tu relies les poids à l’impact perçu sur la satisfaction client ou la performance.
+
+C’est simple, transparent et utile pour prototyper.
+
+2. 📊 Méthode statistique (nous le veroons dans le projet 05)
+Tu peux faire de la régression pour voir quel critère explique le mieux la satisfaction, les coûts, etc.
+
+3. 📥 Méthode participative
+Tu fais un sondage (ex. auprès de voyageurs) : "Qu’est-ce qui vous dérange le plus ?"
+
+Tu en déduis les poids.
+
+4. 📈 Optimisation automatique
+Machine learning, techniques de scoring (ex : AHP, PCA pondérée, etc.)
+
+🛠️ En résumé : pourquoi c’est utile de pondérer ?
+Avantage	Explication
+🎯 Refléter les priorités	Tous les critères n’ont pas le même impact
+⚖️ Créer un score équilibré	Tu peux éviter qu’un seul bon critère masque les autres
+🔍 Faciliter l’interprétation	Tu peux dire : “Ce score est surtout influencé par les retards”
+🔄 Ajustable	Tu peux tester plusieurs scénarios de pondération
+
+🔁 Et si je ne pondérais pas ?
+Sans pondération, chaque critère aurait le même poids (équivalent à 33% chacun ici).
+Tu peux très bien tester cela aussi :
+
+==> Interprétation :
+score_final <- mean(c(score_annul, score_retard, score_effic))
+Mais ce serait moins précis si certains critères sont plus pénalisants que d’autres.
+
+
+
+```{r}
+
+
+```
+
+### Création de fonction pour les plannings des vols
+
+7. Fonction filtrer_vols(date = NULL, carrier = NULL, dest = NULL, min_delay = NULL)
+🎯 Objectif :
+Filtrer dynamiquement les vols en fonction de plusieurs critères (tous facultatifs).
+
+
+```{r}
+filtrer_vols <- function(date = NULL, carrier = NULL, dest = NULL, min_delay = NULL) {
+  df <- flights
+
+  if (!is.null(date)) {
+    date_parts <- strsplit(date, "-")[[1]]
+    df <- df %>%
+      filter(year == as.numeric(date_parts[1]),
+             month == as.numeric(date_parts[2]),
+             day == as.numeric(date_parts[3]))
+  }
+
+  if (!is.null(carrier)) {
+    df <- df %>% filter(carrier == carrier)
+  }
+
+  if (!is.null(dest)) {
+    df <- df %>% filter(dest == dest)
+  }
+
+  if (!is.null(min_delay)) {
+    df <- df %>% filter(dep_delay >= min_delay)
+  }
+
+  return(df)
+}
+
+# 🧪 Exemples
+filtrer_vols(carrier = "DL", min_delay = 60)
+filtrer_vols(date = "2013-07-04", dest = "LAX")
+
+```
+
+
+
+## Filtrer en fonction des jours critiques 
+8. Fonction jours_critiques(n = 5)
+🎯 Objectif :
+Afficher les jours avec le plus de retards et/ou annulations.
+
+```{r}
+jours_critiques <- function(n = 5) {
+  flights %>%
+    mutate(jour = as.Date(time_hour),
+           annule = is.na(dep_time)) %>%
+    group_by(jour) %>%
+    summarise(
+      retard_moyen = mean(dep_delay, na.rm = TRUE),
+      nb_annules = sum(annule),
+      total_vols = n(),
+      score_critique = retard_moyen + (nb_annules / total_vols * 100)
+    ) %>%
+    arrange(desc(score_critique)) %>%
+    head(n)
+}
+
+# 🧪 Exemple
+jours_critiques(10)
+
+```
+
+
+
+
+## Idée avancée d'initiation à a programmation 
+
+## Initiation à la programmation 
+
+**Idée de suggestion 2 pour la partie modélisation**
+
+creation de fonction et de boucle 1. Calculateur de retard total par
+avion But : Écrire une fonction retard_total(tailnum) qui retourne le
+retard cumulé pour un avion spécifique.
+
+Compétences : group_by, summarise, filter, gestion des NA.
+
+👉 Bonus : ajouter une option pour filtrer selon le mois.
+
+📅 2. Fonction de planning de vol journalier But : Créer une fonction
+planning_journalier(date) qui affiche tous les vols ce jour-là, triés
+par heure de départ.
+
+Entrée : une date (ex. "2013-05-17")
+
+Sortie : un data.frame avec les vols.
+
+📉 3. Analyse comparative entre deux compagnies But : Fonction
+compare_carriers(c1, c2) pour comparer la performance (retards moyens,
+distance, temps de vol, etc.)
+
+Bonus : Retourner aussi des graphiques comparatifs (avec ggplot2).
+
+🌍 4. Cartographie des trajets But : Créer une fonction
+trace_routes(carrier) qui trace les principales routes utilisées par une
+compagnie sur une carte (ggplot2 + maps ou leaflet).
+
+Données utiles : airports (dans nycflights13)
+
+⏱ 5. Fonction de performance horaire But : Fonction
+perf_par_heure(carrier) pour voir à quelle heure une compagnie a le plus
+de retards ou d’annulations.
+
+Sortie : un graphique ou un tableau des retards moyens par heure.
+
+📊 6. Score de fiabilité des vols But : Créer une fonction
+score_fiabilite(carrier) qui donne un score basé sur :
+
+\% de vols annulés
+
+\% de vols en retard de plus de 15 min
+
+temps de vol vs distance
+
+Apprentissage : logique conditionnelle, pondération de critères,
+visualisation.
+
+📦 7. Fonction multi-filtre personnalisée But : Une fonction
+filtrer_vols(date = NULL, carrier = NULL, dest = NULL, min_delay = NULL)
+qui permet de filtrer dynamiquement selon les inputs de l'utilisateur.
+
+Compétences : arguments optionnels, logique if (!is.null(...)), piping
+dynamique.
+
+🚨 8. Détection des jours critiques But : Créer une fonction
+jours_critiques(n = 5) qui retourne les jours avec le plus de retards ou
+d’annulations.
+
+Bonus : Affichage visuel des jours critiques sur un calendrier (avec
+ggplot2 ou timevis).
+

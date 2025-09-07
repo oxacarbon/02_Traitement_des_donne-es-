@@ -1,0 +1,159 @@
+---
+title: "02_Projet_Aérien"
+author: "Asta Ouattara"
+date: "2025-05-21"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+## Etape 2 du projet : Representation graphique
+
+## Chargement des données du projet 01_Projet_Aérien
+### Travail à faire dans ce projet
+
+1.  Calcul des 10 compagnies avec le plus grand nombre de vols
+2.  Affichage de la heatmap (carte de chaleur des retards par mois et
+    heure)
+3.  Courbe de variation du retard moyen par jour de l’année
+4.  Diagramme de densité de retard
+5.  Diagramme de densité de retard
+6.  Boxplot de retard par compagnies aériennes, Comparer la variabilité
+    des retards selon les compagnies.
+7.  Barplot du nombre d'annulation par jour dans la semaine
+
+```{r}
+################## 1. Calcul des 10 compagnies avec le plus grand nombre de vols ##############
+
+library(ggplot2)
+# Calcul des 10 compagnies avec le plus grand nombre de vols
+
+top10_compagnies <- flights %>%
+  count(carrier, sort = TRUE) %>%
+  top_n(10, n)
+
+# Barplot
+ggplot(top10_compagnies, aes(x = reorder(carrier, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Top 10 des compagnies aériennes par nombre de vols (2013)",
+    x = "Compagnie aérienne",
+    y = "Nombre de vols"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+################## 2. Affichage de la heatmap (carte de chaleur des retards par mois et heure) ##############
+
+# Préparation des données : calcul du retard moyen par mois et heure
+heatmap_data <- flights %>%
+  filter(!is.na(dep_delay), !is.na(hour)) %>%
+  group_by(month, hour) %>%
+  summarise(mean_delay = mean(dep_delay), .groups = "drop")
+
+# Affichage de la heatmap
+ggplot(heatmap_data, aes(x = hour, y = factor(month), fill = mean_delay)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "green", mid = "yellow", high = "red", midpoint = 15, na.value = "grey90") +
+  labs(
+    title = "Heatmap des retards moyens au départ",
+    subtitle = "Par heure et par mois (2013)",
+    x = "Heure de départ",
+    y = "Mois",
+    fill = "Retard (min)"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+
+################## 3. Courbe de variation du retard moyen par jour de l’année ##############
+
+#Courbe de variation du retard moyen par jour de l’année
+flights %>%
+  filter(!is.na(dep_delay)) %>%
+  group_by(day_of_year = as.Date(time_hour)) %>%
+  summarise(mean_delay = mean(dep_delay)) %>%
+  ggplot(aes(x = day_of_year, y = mean_delay)) +
+  geom_line(color = "darkblue") +
+  labs(title = "Évolution du retard moyen au départ en 2013",
+       x = "Jour de l'année", y = "Retard moyen (minutes)") +
+  theme_minimal()
+
+```
+
+```{r}
+################## 4. Diagramme de densité de retard ##############
+
+# Diagramme de densité de retard
+
+flights %>%
+  filter(!is.na(dep_delay)) %>%
+  ggplot(aes(x = dep_delay)) +
+  geom_density(fill = "lightblue", alpha = 0.6) +
+  xlim(-50, 200) +
+  labs(title = "Distribution des retards au départ", x = "Retard (minutes)", y = "Densité") +
+  theme_minimal()
+
+```
+
+```{r}
+
+################## 5. Boxplot de retard par compagnies aériennes ##############
+
+# Boxplot de retard par compagnies aériennes
+#Comparer la variabilité des retards selon les compagnies.
+flights %>%
+  filter(!is.na(dep_delay)) %>%
+  ggplot(aes(x = reorder(carrier, dep_delay, FUN = median), y = dep_delay)) +
+  geom_boxplot(fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Distribution des retards au départ par compagnie",
+       x = "Compagnie", y = "Retard (minutes)") +
+  theme_minimal()
+
+```
+
+```{r}
+################## 6. Barplot du nombre d'annulation par jour dans la semaine ##############
+
+# Barplot du nombre d'annulation par jour dans la semaine
+flights %>%
+  mutate(day_of_week = weekdays(as.Date(time_hour))) %>%
+  filter(is.na(dep_time)) %>%
+  count(day_of_week) %>%
+  ggplot(aes(x = reorder(day_of_week, n), y = n)) +
+  geom_col(fill = "firebrick") +
+  labs(title = "Annulations de vols par jour de la semaine",
+       x = "Jour", y = "Nombre d'annulations") +
+  theme_minimal()
+
+
+```
+
+### Histogramme de représentation
+
+```{r}
+# Histogramme des distances de vol
+ggplot(flights, aes(x = distance)) +
+  geom_histogram(binwidth = 50) +
+  labs(title = "Distribution des distances de vol", x = "Distance (miles)", y = "Nombre de vols")
+
+```
+
+```{r}
+library(ggplot2)
+
+# Retard au départ par mois
+flights %>%
+  group_by(month) %>%
+  summarise(avg_delay = mean(dep_delay, na.rm = TRUE)) %>%
+  ggplot(aes(x = month, y = avg_delay)) +
+  geom_col() +
+  labs(title = "Retard moyen au départ par mois", x = "Mois", y = "Retard (minutes)")
+```
